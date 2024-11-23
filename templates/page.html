@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>Simulation Dashboard </h1>
+
+
+    <!-- Old testcode, commented out
+
+    <img src="..\images\cat.png">
+    <img src="..\images\plot.jpg">
+    <img src="..\static\images\plot.jpg">
+    <img src="..\static\images\cat.png">
+
+    -->
+
+    <p>Enter the simulation parameters below</p>
+
+    <img src="..\static\images\process_image.png">
+
+    <form id="form" action="/submit_form" method="post">
+        <p>Parameter 1: Production units: <input name=productionunits type = "text"></p>
+        <p>Parameter 2: Capacity of resource slots: <input name=num_resources type = "text"></p>
+        <button class="btn btn-primary" type="submit">Submit simulation parameters</button>
+    </form>
+
+
+
+
+<div>
+    <h1>Simulation Plot Based on User Input</h1>
+
+    
+    <img src="data:image/png;base64,{{ plotimage }}"
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,46 @@
+@startuml
+!define ICONURL https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v2.1.0/sprites
+
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontColor Black
+skinparam backgroundColor White
+skinparam packageBorderColor LightGray
+skinparam packageBackgroundColor AliceBlue
+skinparam nodeBorderColor LightSteelBlue
+skinparam noteBorderColor SlateGray
+skinparam noteBackgroundColor FloralWhite
+skinparam arrowColor SteelBlue
+skinparam rectangleBorderColor LightSteelBlue
+skinparam rectangleBackgroundColor Lavender
+skinparam defaultTextAlignment center
+
+
+
+package "Process overview: Pizzeria" {
+    rectangle "Step 1: Preparing" as Preparing {
+        note as PreparingNote
+            Processing time [min]: 5
+            Capacity: 3 (Cooking Team)
+        end note
+    }
+
+    rectangle "Step 2: Baking" as Baking {
+        note as BakingNote
+            Processing time [min]: 10
+            Capacity: 2 (Oven Slots)
+        end note
+    }
+
+    rectangle "Step 3: Packaging" as Packaging {
+        note as PackagingNote
+            Processing time [min]: 3
+            Capacity: 4 (Packaging Team)
+        end note
+    }
+
+    Preparing -right-> BakingNote : Flow of production units
+    Baking -left[hidden]--> Baking
+    Baking -right-> PackagingNote : Flow of production units
+}
+@enduml

@@ -1,9 +1,4 @@
-#* sim.py: Simulation extracted out into separate file. Runs simulation based on user inputs and creates output (result plot .jpg-images and realtime console simulation run)
-#    * Main access point is the API ("Pass configuration and receive results")
-#    * Structured into simulation manager which administrates simulation core, a data monitor which stores timestamp data during the process of the simulation and the visualization which turns the data into plots.
-#    * Simulation logic is based on the Discrete Event Simulation paradigm which is a standard paradigm for industrial processes. It utilizes the SimPy package.
-#    * Plot generation utilizes matplotlib library
-#    * Extraction of plot images to the webapp works by converting them to base64 encoded strings
+### 17.11 - Refactored to Object Oriented
 
 
 # Import Basic packages
@@ -22,7 +17,7 @@ class SimulationCore:
     def __init__(self, simconfig):
         self.config = simconfig
         self.env = simpy.Environment()
-        self.simclass = Factory(
+        self.simclass = Bakery(
             input_env=self.env, 
             parameterlist_ressourcebased_processsteps=simconfig.ressourceconfigs)
         
@@ -35,20 +30,25 @@ class SimulationCore:
             list_of_resources_to_be_monitored = list_of_resources_to_be_monitored)
         
     def run_sim(self):
-        num_widgets = self.config.params_sim["productionunits"]
+        num_cakes = self.config.params_sim["productionunits"]
         untiltime = self.config.params_sim["untiltime"]
 
-        self.env.process(self.simclass.factory_widgetbatch_random_starting_time(num_widgets=num_widgets)) #30 is number of widgets
+        self.env.process(self.simclass.bakery_cakebatch_random_starting_time(num_cakes=num_cakes)) #30 is number of cakes
         self.env.run(until=untiltime)
 
+    # def run_sim_based_on_configuration(self):
+    #     self.env.process(self.simclass.bakery_cakebatch_random_starting_time(num_cakes=runconfig.params["productionunits"])) #30 is number of cakes
+    #     untiltime = self.config.params["untiltime"]
+    #     self.env.run(until=untiltime)
+
     def run_visualization(self):
-        self.visualizer = Visualizer(
-            where_to_find_data=self.monitor.data_monitoring, 
-            simuntil = self.config.params_sim["untiltime"])
+        self.visualizer = Visualizer(where_to_find_data=self.monitor.data_monitoring)
         #self.plot = self.visualizer.return_plot()
         self.plots = self.visualizer.return_list_of_plots_for_ressources()
 
-
+    # def clear_monitoring_data(self):
+    #     self.monitor.data_monitoring = {}
+    #     self.run_visualization()
     def clear_monitoring_data(self):
         if hasattr(self, 'monitor'):
             for resource, data_list in self.monitor.data_monitoring.items():
@@ -60,6 +60,12 @@ class Monitor:
         self.env = env
         self.data_monitoring = {}
         
+        ###OLD MONITOR - replaced by the multi-resource approach below
+        #self.monitor_partial_func = partial(self.monitor_func, env, resource_to_be_monitored, self.data_monitoring)
+        #self.patch_resource(resource = resource_to_be_monitored, post=self.monitor_partial_func)
+        #self.patch_resource(resource=resource_to_be_monitored, targetdatalist=self.data_monitoring, post=self.monitor_partial_func)
+        ###
+
         for resource_to_be_monitored in list_of_resources_to_be_monitored:
             #Create  sub-datalist for this resource to be monitored
             self.data_monitoring[resource_to_be_monitored] = [] # resource_to_be_monitored is a class object - can this work?
@@ -77,12 +83,6 @@ class Monitor:
                 self.data_monitoring[resource_to_be_monitored], 
                 post=self.monitor_partial_func
                 )
-            
-            ### added in - to be confirmed
-            self.env.process(self.continuous_monitor(
-                resource = resource_to_be_monitored, 
-                target_datalist=self.data_monitoring[resource_to_be_monitored]
-            ))
         
     
     def patch_resource(self, resource, targetdatalist, post = None):
@@ -102,26 +102,10 @@ class Monitor:
             len(input_resource.queue)
             )
         target_datalist.append(item)
-    
-    # Attempt to replace monitor_func() / add into the Monitor loop
-    def continuous_monitor(self, resource, target_datalist):
-        while True:
-            # Capture current state
-            item = (
-                self.env.now,  # Current time
-                resource.count,  # Number of resources in use
-                len(resource.queue)  # Current queue length
-            )
-            self.data_monitoring[resource].append(item)
-            target_datalist.append(item)
-            
-            # Wait for a short time before next monitoring
-            yield self.env.timeout(1)
 
 class Visualizer:
-    def __init__(self, where_to_find_data, simuntil):
+    def __init__(self, where_to_find_data):
         self.data = where_to_find_data
-        self.simuntil = simuntil
         
         #Additional logic for cumulative/separated plots
         self.figures = {} 
@@ -166,8 +150,6 @@ class Visualizer:
             self.timestamps = []
             self.queue_lengths = []
         
-        # print (inputdata)
-
         # Choose current color
         currentcolor = self.graphcolors[self.index_currentcolor % len(self.graphcolors)] #Take the index of the color (and make sure it doesnt go out of bounds)
 
@@ -178,12 +160,12 @@ class Visualizer:
         plt.legend()
 
         # Set plot labels and limits
-        #plt.title(ressourcename)
+        plt.title(ressourcename)
         plt.xlabel('Time')
         plt.ylabel('Resource Queue Length')
         
         if self.timestamps and self.queue_lengths:
-            plt.xlim(0, self.simuntil + 5)
+            plt.xlim(0, max(self.timestamps) + 5)
             plt.ylim(0, max(self.queue_lengths) + 5)
 
         # Display the plot
@@ -199,18 +181,53 @@ class Visualizer:
         return output_base64
 
 
-class Factory:  
-    def factory_widgetbatch_random_starting_time(self, num_widgets):
-        for i in range(num_widgets):  # Make n widgets
-            self.env.process(self.process_definition_produce_one_widget(f'widget {i+1}'))
-            yield self.env.timeout(random.randint(1, 3))  # Time between starting each widget
+class Bakery:
+    # def __init__(self, input_env, resourcecapacity):
+    #     self.env = input_env
+    #     self.team = simpy.Resource(self.env, capacity = resourcecapacity)
+    #     self.oven = simpy.Resource(self.env, capacity = resourcecapacity)
+    
+    def bakery_cakebatch_random_starting_time(self, num_cakes):
+        for i in range(num_cakes):  # Make n cakes
+            self.env.process(self.process_definition_produce_one_cake(f'Cake {i+1}'))
+            yield self.env.timeout(random.randint(1, 3))  # Time between starting each cake
+
+    ### 30. Nov - Switched off because hopefully replaced by below
+    # def process_definition_produce_one_cake(self, name):
+    #     print(f"{name} starts preparing at {self.env.now}")
+    #     prep_time = random.randint(2, 5)
+    #     yield self.env.timeout(prep_time)
+    #     print(f"{name} finished preparation at {self.env.now}")
+
+    #     print(f"{name} waiting for the teammember at {self.env.now}")
+    #     with self.team.request() as req_team:
+    #         yield req_team  # Wait until the oven is available
+    #         print(f"{name} starts teaming at {self.env.now}")
+    #         team_time = random.randint(8, 12)
+    #         yield self.env.timeout(team_time)
+    #         print(f"{name} finished teaming at {self.env.now}")
+        
+    #     with self.oven.request() as req_oven:
+    #         yield req_oven  # Wait until the oven is available
+    #         print(f"{name} starts baking at {self.env.now}")
+    #         oven_time = random.randint(8, 12)
+    #         yield self.env.timeout(oven_time)
+    #         print(f"{name} finished baking at {self.env.now}")
+        
+        
+    #     cool_time = random.randint(3, 6)
+    #     yield self.env.timeout(cool_time)
+    #     print(f"{name} is ready at {self.env.now}")
 
 
     ###### Concept for stepbased rewrite
-    ### new INITROUTINE OF THE Factory (?) ###
+    ### new INITROUTINE OF THE BAKERY (?) ###
     def __init__(self, input_env, parameterlist_ressourcebased_processsteps):
         self.env = input_env
         self.ressourcebased_processsteps = []
+        ### Looks like broken, rewrite below
+        # for i in range(len(parameterlist_ressourcebased_processsteps)):
+        #     self.ressourcebased_processsteps.append(RessourcebasedProcessstep)
 
         for config in parameterlist_ressourcebased_processsteps:
             stepresource = simpy.Resource(
@@ -221,34 +238,78 @@ class Factory:
             processstep_params = {
                 "stepnumber": len(self.ressourcebased_processsteps),
                 "stepname": config.params_ressource["ressourcename"],
-                "stepresource": stepresource,                
+                "stepresource": stepresource,
+                #"timeneeded_step": random.randint(5, 10) # Replaced below with the input from the user
                 "timeneeded_step": config.params_ressource["time_produnit"]
             }
 
             self.ressourcebased_processsteps.append(RessourcebasedProcessstep(processstep_params))
+
+
+
     ### Ende INITROUTINE ###
         
-    ### REWRITTEN Process "one widget"
-    def process_definition_produce_one_widget(self, name):
+    ### REWRITTEN Process "one cake"
+        
+    # def process_definition_produce_one_cake(self, name):
+    #     for ressourcebased_processstep in self.ressourcebased_processsteps:
+    #         print(f"{name} entering Step XXX at {self.env.now}")
+    #         #with self.ressources[i].stepresource.request as ressourcerequest_processstep: ###Geht evtl einfacher (alles verpackt in ressourcebased processstep), siehe drunter
+    #         with ressourcebased_processstep.stepresource.request as ressourcerequest:
+    #             yield ressourcerequest  # Wait until the step-ressource is available
+    #             print(f"{name} starts using the ressource for this step at {self.env.now}")
+    #             timeneeded_step = ressourcebased_processstep.timeneeded_step
+
+    #             yield self.env.timeout(timeneeded_step)
+    #             print(f"{name} finished baking at {self.env.now}")
+                
+    #seems to work
+    def process_definition_produce_one_cake(self, name):
         for ressourcebased_processstep in self.ressourcebased_processsteps:
-            print(f"Minute {self.env.now}: {name} just entered step {ressourcebased_processstep.stepname}. Ressource queue is {len(ressourcebased_processstep.stepresource.queue)}")
+            #print(f"{name} entering Step {ressourcebased_processstep.stepname} at {self.env.now}")
             
             # Use yield with the request method
             req = ressourcebased_processstep.stepresource.request()
             yield req  # Wait until the step-resource is available
             
             try:
-                print(f"Minute {self.env.now}: {name} starts using the resource for this step. Ressource queue is {len(ressourcebased_processstep.stepresource.queue)}")
+                #print(f"{name} starts using the resource for this step at {self.env.now}")
                 timeneeded_step = ressourcebased_processstep.timeneeded_step
 
                 yield self.env.timeout(timeneeded_step)
-                print(f"Minute {self.env.now}: {name} finished step {ressourcebased_processstep.stepname}. Ressource queue is {len(ressourcebased_processstep.stepresource.queue)}")
+                #print(f"{name} finished step {ressourcebased_processstep.stepname} at {self.env.now}")
             finally:
                 # Always release the resource
                 ressourcebased_processstep.stepresource.release(req)
 
 
+    # def process_definition_2_bake_one_cake(self, name):
+    #     print(f"{name} starts preparing at {self.env.now}")
+    #     prep_time = random.randint(2, 5)
+    #     yield self.env.timeout(prep_time)
+    #     print(f"{name} finished preparation at {self.env.now}")
+
+    #     print(f"{name} waiting for the oven at {self.env.now}")
+    #     with self.oven.request() as req:
+    #         yield req  # Wait until the oven is available
+    #         print(f"{name} starts baking at {self.env.now}")
+    #         bake_time = random.randint(8, 12)
+    #         yield self.env.timeout(bake_time)
+    #         print(f"{name} finished baking at {self.env.now}")
+
+    #     cool_time = random.randint(3, 6)
+    #     yield self.env.timeout(cool_time)
+    #     print(f"{name} is ready at {self.env.now}")
+
     
+### Needs to be adapted to config of multiple ressources
+# class SimulationConfiguration:
+#     def __init__(self,  productionunits, num_resources):
+#         self.params = {
+#             "untiltime": 480,
+#             "productionunits": int(productionunits),
+#             "num_resources": int(num_resources)
+#         }
 
 class ConfigProcessRessource:
     def __init__(self,  ressourcename, ressourcecapacity, time_produnit):
@@ -259,9 +320,9 @@ class ConfigProcessRessource:
             }
 
 class SimulationConfiguration:
-    def __init__(self,  productionunits, simulationtime, ressourceconfigs:List[ConfigProcessRessource]):
+    def __init__(self,  productionunits, ressourceconfigs:List[ConfigProcessRessource]):
         self.params_sim = {
-            "untiltime": int(simulationtime),
+            "untiltime": 480,
             "productionunits": int(productionunits)
             }
         self.ressourceconfigs = ressourceconfigs
@@ -275,8 +336,6 @@ class RessourcebasedProcessstep:
         self.timeneeded_step = parameters_processstep["timeneeded_step"]
 
 class SimulationManager:
-    #The top level object that manages the handling and Input/Output logic with the webapp. Returning results and clearing the results.
-    #Starts the actual simulation and data logic (Simulation Core, Monitor object and Visualizer)
     def __init__(self):
         self.mysim = None
         self.sim_results = {}        
@@ -315,27 +374,46 @@ class SimulationManager:
         
         print("Clearing done")
 
+### Methods to be exposed
+def run_sim_from_config_get_results(runconfig:SimulationConfiguration):
+        sim_results = {}
+
+        mysim = SimulationCore(simconfig=runconfig)
+        
+        #mysim.run_sim_based_on_configuration()
+        mysim.run_sim()
+        mysim.run_visualization()
+        
+        # Possibly unneccessarily complex / memory intensive --> Review
+        #sim_results["plot"] = mysim.plot
+        sim_results["plots"] = mysim.plots
+        sim_results["simcore"] = mysim
+        
+        return sim_results
+
+
+
+
 
 #Sampleconfig for running a manual simulation. Currently only process with one resource
-#samplesimconfig = SimulationConfiguration( 
-#    productionunits = 50000,
-#    simulationtime=480, 
-#    ressourceconfigs = [
-#        ConfigProcessRessource(
-#            ressourcename="res1", 
-#            ressourcecapacity=2,
-#            time_produnit = 15
-#            ),        
-#        ConfigProcessRessource(
-#            ressourcename="res2", 
-#            ressourcecapacity=1,
-#            time_produnit = 10
-#            )
-#        ]
-#    )
+samplesimconfig = SimulationConfiguration( 
+    productionunits = 50000, 
+    ressourceconfigs = [
+        ConfigProcessRessource(
+            ressourcename="res1", 
+            ressourcecapacity=2,
+            time_produnit = 15
+            ),        
+        ConfigProcessRessource(
+            ressourcename="res2", 
+            ressourcecapacity=1,
+            time_produnit = 10
+            )
+        ]
+    )
 
 
-#def testsim():
-#    mysim = SimulationCore(samplesimconfig)
-#    mysim.run_sim()
-#    mysim.run_visualization()
+def testsim():
+    mysim = SimulationCore(samplesimconfig)
+    mysim.run_sim()
+    mysim.run_visualization()
